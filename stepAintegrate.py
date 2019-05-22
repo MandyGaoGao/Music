@@ -21,6 +21,15 @@ def extract_features_breath(p):#(3,31)
         librosa.feature.delta(mfcc),#(1,31)
         librosa.feature.delta(librosa.feature.rms(y=y))#(1,31)
     ]
+def extract_features_rhyme(p):#(385,31)
+    y,sr=librosa.load(p)
+    y_harmonic, y_percussive = librosa.effects.hpss(y)
+    hop_length = 512
+    oenv = librosa.onset.onset_strength(y=y, sr=sr, hop_length=hop_length)
+    return [
+        librosa.feature.tempogram(onset_envelope=oenv, sr=sr,hop_length=hop_length),#(384,31)
+        librosa.feature.chroma_cens(y=y_harmonic, sr=sr)#(1,31)
+    ]
 
 #iterate to load all audio
 for p in Path(r'C:\Users\gaoyu\Desktop\feature\records').glob("**/*.wav"):
