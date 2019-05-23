@@ -1,4 +1,3 @@
-
 import librosa
 import numpy as np
 import os
@@ -229,9 +228,9 @@ def vocal_feature(fpath):
     contrast=librosa.feature.spectral_contrast(y=x_trimmed,sr=sr,n_bands=6)#(7,31)
     flatness=librosa.feature.spectral_flatness(y=x_trimmed)#(1,31)
     mfccs=librosa.feature.mfcc(y=x_trimmed, sr=sr, n_mfcc=13)#(13,31)
-    feat = np.hstack([zero, centroid, rolloff,contrast,flatness,mfccs])
-
-    feat_mean = np.mean(feat, axis=0)
+    audio_features = np.array([zero, centroid, rolloff,contrast,flatness,mfccs])   #(1028,31)
+    feat= np.vstack(audio_features)
+    feat_mean=np.mean(feat, axis=0)
     feat_std = np.std(feat, axis=0)
     feat = (feat - feat_mean)/(feat_std+1e-10)
 
@@ -249,7 +248,8 @@ def breath_feature(fpath):
     mfcc=librosa.feature.mfcc(y=x_trimmed, sr=sr, n_mfcc=13)[12] 
     delta_mfcc=librosa.feature.delta(mfcc)#(1,31)
     delta_energy=librosa.feature.delta(librosa.feature.rms(y=x_trimmed))#(1,31)
-    feat = np.hstack([mfcc,delta_mfcc, delta_energy])
+    audio_features = np.array([mfcc,delta_mfcc, delta_energy])   #(1028,31)
+    feat= np.vstack(audio_features)
 
     feat_mean = np.mean(feat, axis=0)
     feat_std = np.std(feat, axis=0)
@@ -265,7 +265,9 @@ def pitch_feature(fpath):
         print("Fail to decode")
         return None
     x_trimmed, _ = librosa.effects.trim(x, top_db=30)
-    pitches=pitch_detect_simple(y=x_trimmed, sr)#(1,31)     
+    pitches=pitch_detect_simple(y=x_trimmed, sr=sr)#(1,31)   
+    audio_features = np.array([pitches])   #(1028,31)
+    feat= np.vstack(audio_features)
     feat = np.hstack([pitches])
     feat_mean = np.mean(feat, axis=0)
     feat_std = np.std(feat, axis=0)
@@ -283,11 +285,10 @@ def rhyme_feature(fpath):
     x_trimmed, _ = librosa.effects.trim(x, top_db=30)
     hop_length = 512
     oenv = librosa.onset.onset_strength(y=x_trimmed, sr=sr, hop_length=hop_length)
-    
-    tempo=librosa.feature.tempogram(onset_envelope=oenv, sr=sr,hop_length=hop_length),#(384,31)
-    chroma=librosa.feature.chroma_cens(y=x_trimmed, sr=sr)#(1,31)
-      
-    feat = np.hstack([tempo,chroma])
+    tempo=librosa.feature.tempogram(onset_envelope=oenv, sr=sr,hop_length=hop_length)#(384,31)
+    chroma=librosa.feature.chroma_cens(y=x_trimmed, sr=sr)
+    audio_features = np.array([tempo,chroma])   
+    feat= np.vstack(audio_features) 
     feat_mean = np.mean(feat, axis=0)
     feat_std = np.std(feat, axis=0)
     feat = (feat - feat_mean)/(feat_std+1e-10)
@@ -302,11 +303,14 @@ def emotion_feature(fpath):
         print("Fail to decode")
         return None
     x_trimmed, _ = librosa.effects.trim(x, top_db=30)
-    aweightPower=AweightPower_extract(x_trim, sr),#(1,31)
-    power=librosa.feature.rms(y=x_trim),#(1,31)intensity
-    harmonics=librosa.feature.zero_crossing_rate(y=x_trim),#(1,31)
-    #vibrato
-    feat = np.hstack([aweightPower,power,harmonics])
+    aweightPower=AweightPower_extract(x_trimmed, sr)#(1,31)
+   
+    power=librosa.feature.rms(y=x_trimmed)#(1,31)intensity
+
+    harmonics=librosa.feature.zero_crossing_rate(y=x_trimmed)#(1,31)
+  
+    audio_features = np.array([aweightPower,power,harmonics]) #(1028,31)
+    feat= np.vstack(audio_features)
     feat_mean = np.mean(feat, axis=0)
     feat_std = np.std(feat, axis=0)
     feat = (feat - feat_mean)/(feat_std+1e-10)
@@ -336,9 +340,12 @@ def get_feature_extract_func(k):
 
 if __name__ == "__main__":
 
-    tester = "./dataset/tester/tester.mp3"
+    tester = r"C:\Users\gaoyu\Desktop\feature\test.wav"
+    #feat = hand_feature(tester)#(26,15)
 
-    feat = hand_feature(tester)
-                                                                                                 188,1         Bot
+    #feat = vocal_feature(tester)#(24,26)
+    #feat = breath_feature(tester)#(3,26)
+    #feat = pitch_feature(tester)#(1,26)
+    #feat = emotion_feature(tester)#(3,26)                                                     188,1         Bot
 
                                                                                                                      128,2         62%
