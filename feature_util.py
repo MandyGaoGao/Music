@@ -8,7 +8,57 @@ import multiprocessing
 import functools
 import h5py
 import threading
+from pathlib import Path
+from numpy import pi, convolve
+from scipy.signal.filter_design import bilinear
+from scipy.signal import lfilter
 
+#utilities:
+def pitch_detect_simple(y, sr):
+    pitches, magnitudes = librosa.core.piptrack(y=y, sr=sr)
+    shape = pitches.shape
+    nb_samples = shape[0]
+    nb_windows = shape[1]
+    pitches, magnitudes = extract_max(pitches, magnitudes, shape)
+    pitches = smooth(pitches, window_len=5)
+    return pitches
+
+def harmonic_extract(y, sr):
+    h_range = [1]
+    S = np.abs(librosa.stft(y))
+    fft_freqs = librosa.fft_frequencies(sr=sr)
+    S_harm = librosa.interp_harmonics(S, fft_freqs, h_range, axis=0)[0]
+    return S_harm
+
+def a_weighting_coeffs_design(sample_rate):
+    f1 = 20.598997
+    f2 = 107.65265
+    f3 = 737.86223
+    f4 = 12194.217
+    A1000 = 1.9997
+    numerators = [(2*pi*f4)**2 * (10**(A1000 / 20.0)), 0., 0., 0., 0.];
+    denominators = convolve(
+        [1., +4*pi * f4, (2*pi * f4)**2],
+        [1., +4*pi * f1, (2*pi * f1)**2]
+    )
+    denominators = convolve(
+        convolve(denominators, [1., 2*pi * f3]),
+        [1., 2*pi * f2]
+    )
+    return bilinear(numerators, denominators, sample_rate)
+
+def AweightPower_extract(y, sr):
+    b, a = a_weighting_coeffs_design(sr)
+    k = lfilter(b, a, y)
+    a_weighted_power=librosa.feature.rms(y=k)
+    return a_weighted_power
+
+
+#extract features for each dimension:
+
+#-----------------------------------------------------------------------------------------
+#-----------------------------------------------------------------------------------------
+#-----------------------------------------------------------------------------------------
 # configure for librosa
 class Config(object):
     n_fft = 1024
@@ -107,8 +157,6 @@ def hand_feature(fpath):
     return feat
 
 
-
-
 def preprocess(fpath):
     try:
         x, sr = librosa.load(fpath, sr=conf.sr, res_type="kaiser_fast")
@@ -166,16 +214,125 @@ def preprocess(fpath):
 
     return feat
 
+def vocal_feature(fpath):
+    try:
+        x, sr = librosa.load(fpath, sr=conf.sr, res_type="kaiser_fast")
+    except:
+        print("Fail to decode")
+        return None
+    x_trimmed, _ = librosa.effects.trim(x, top_db=30)
+
+    # timbre: to compute
+    zero=librosa.feature.zero_crossing_rate(y=x_trimmed)#(1,31)
+    centroid=librosa.feature.spectral_centroid(y=x_trimmed, sr=sr)#(1,31)
+    rolloff=librosa.feature.spectral_rolloff(y=x_trimmed, sr=sr)#(1,31)
+    contrast=librosa.feature.spectral_contrast(y=x_trimmed,sr=sr,n_bands=6)#(7,31)
+    flatness=librosa.feature.spectral_flatness(y=x_trimmed)#(1,31)
+    mfccs=librosa.feature.mfcc(y=x_trimmed, sr=sr, n_mfcc=13)#(13,31)
+    feat = np.hstack([zero, centroid, rolloff,contrast,flatness,mfccs])
+
+    feat_mean = np.mean(feat, axis=0)
+    feat_std = np.std(feat, axis=0)
+    feat = (feat - feat_mean)/(feat_std+1e-10)
+
+    print(fpath, feat.shape)
+    return feat
+
+def breath_feature(fpath):
+    try:
+        x, sr = librosa.load(fpath, sr=conf.sr, res_type="kaiser_fast")
+    except:
+        print("Fail to decode")
+        return None
+    x_trimmed, _ = librosa.effects.trim(x, top_db=30)
+    
+    mfcc=librosa.feature.mfcc(y=x_trimmed, sr=sr, n_mfcc=13)[12] 
+    delta_mfcc=librosa.feature.delta(mfcc)#(1,31)
+    delta_energy=librosa.feature.delta(librosa.feature.rms(y=x_trimmed))#(1,31)
+    feat = np.hstack([mfcc,delta_mfcc, delta_energy])
+
+    feat_mean = np.mean(feat, axis=0)
+    feat_std = np.std(feat, axis=0)
+    feat = (feat - feat_mean)/(feat_std+1e-10)
+
+    print(fpath, feat.shape)
+    return feat
+
+def pitch_feature(fpath):
+    try:
+        x, sr = librosa.load(fpath, sr=conf.sr, res_type="kaiser_fast")
+    except:
+        print("Fail to decode")
+        return None
+    x_trimmed, _ = librosa.effects.trim(x, top_db=30)
+    pitches=pitch_detect_simple(y=x_trimmed, sr)#(1,31)     
+    feat = np.hstack([pitches])
+    feat_mean = np.mean(feat, axis=0)
+    feat_std = np.std(feat, axis=0)
+    feat = (feat - feat_mean)/(feat_std+1e-10)
+
+    print(fpath, feat.shape)
+    return feat
+
+def rhyme_feature(fpath):
+    try:
+        x, sr = librosa.load(fpath, sr=conf.sr, res_type="kaiser_fast")
+    except:
+        print("Fail to decode")
+        return None
+    x_trimmed, _ = librosa.effects.trim(x, top_db=30)
+    hop_length = 512
+    oenv = librosa.onset.onset_strength(y=x_trimmed, sr=sr, hop_length=hop_length)
+    
+    tempo=librosa.feature.tempogram(onset_envelope=oenv, sr=sr,hop_length=hop_length),#(384,31)
+    chroma=librosa.feature.chroma_cens(y=x_trimmed, sr=sr)#(1,31)
+      
+    feat = np.hstack([tempo,chroma])
+    feat_mean = np.mean(feat, axis=0)
+    feat_std = np.std(feat, axis=0)
+    feat = (feat - feat_mean)/(feat_std+1e-10)
+
+    print(fpath, feat.shape)
+    return feat
+
+def emotion_feature(fpath):
+    try:
+        x, sr = librosa.load(fpath, sr=conf.sr, res_type="kaiser_fast")
+    except:
+        print("Fail to decode")
+        return None
+    x_trimmed, _ = librosa.effects.trim(x, top_db=30)
+    aweightPower=AweightPower_extract(x_trim, sr),#(1,31)
+    power=librosa.feature.rms(y=x_trim),#(1,31)intensity
+    harmonics=librosa.feature.zero_crossing_rate(y=x_trim),#(1,31)
+    #vibrato
+    feat = np.hstack([aweightPower,power,harmonics])
+    feat_mean = np.mean(feat, axis=0)
+    feat_std = np.std(feat, axis=0)
+    feat = (feat - feat_mean)/(feat_std+1e-10)
+
+    print(fpath, feat.shape)
+    return feat
+
+
 
 def get_feature_extract_func(k):
     if k=="melmix":
         return preprocess
-
     elif k=="hand":
         return hand_feature
 
-   # elif k ='vocal':
-        #return vocal_feature
+    elif k=="vocal":
+        return vocal_feature
+    elif k=="breath":
+        return breath_feature
+    elif k=="pitch":
+        return pitch_feature
+    elif k=="rhyme":
+        return rhyme_feature
+    elif k=="emotion":
+        return emotion_feature
+    
 
 if __name__ == "__main__":
 
