@@ -188,16 +188,3 @@ def train():
 if __name__ == "__main__":
     train()
 
-
-
-
-
-
-
-
-
-
-
-
-
--- INSERT --                                                                                                     211,1         96%
